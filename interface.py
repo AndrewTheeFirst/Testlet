@@ -1,6 +1,3 @@
-from driver import Driver
-from typing import Callable
-from driver import *
 from pickle import dump, load
 from dataclasses import dataclass
 
@@ -13,16 +10,16 @@ class Group:
     def new_term(self, term: str, definition: str):
         self.terms[term] = definition
 
-def store_group(groups: list[Group]):
+def restore_groups(groups: list[Group]):
     with open(PATH, 'wb') as file:
         for group in groups:
             dump(group, file)
 
-def restore_groups(group: Group):
+def store_group(group: Group):
     with open(PATH, 'ab') as file:
         dump(group, file)
 
-def retrieve_groups():
+def retrieve_groups() -> list[Group]:
     groups = []
     with open(PATH, 'rb') as file:
         while True:
@@ -33,22 +30,12 @@ def retrieve_groups():
                 break
     return groups
 
-def pop_group(title: str, groups: list[Group]):
-    for index in range(len(groups)):
-        if groups[index].title == title:
-            return groups.pop(index)
-    raise Exception("Group could not be Found")
-
-def get_group(title: str, groups: list[Group]):
-    for group in groups:
-        if group.title == title:
-            return group
-    raise Exception("Group could not be Found")
-
-# screen = Driver(title="Testlet", 
-#                 buttons=["New Study Group",
-#                          "Edit a Group",
-#                          "Study a Group"])
-# screen.add_onpress()
-# screen.build()
-# screen.event_loop()
+# groups = []
+# for group_num in range(30):
+#     dict = {}
+#     title = f"Group {group_num}"
+#     group = Group(title, dict)
+#     for term_num in range(5):
+#         group.new_term(f"Term {term_num}", f"Definition {term_num}")
+#     groups.append(group)
+# restore_groups(groups)
