@@ -1,10 +1,11 @@
 from driver import Driver
 from interface import Group,\
     retrieve_groups, restore_groups, store_group
-from cursestools import FreeWindow, Panel, Dir
+from cursestools import Page, Dir
+from cursestools.utils import draw_box
 from cursestools import consts as c
 import curses
-from curses import window
+from time import sleep
 
 # def create():
 #     ... # creating group
@@ -18,84 +19,134 @@ from curses import window
 #     groups.append(group)
 #     restore_groups(groups)
   
-# def study(title: str):
-#     make_selection()
-#     get_group(title)
+def study(self: Driver):
+    index = 0
+    groups = retrieve_groups()
+    while (index := make_selection(self, groups) != -1):
+        view_group(self, groups[index])
+    self.set_last_context()
 
 def delete(self: Driver):
-    groups = retrieve_groups()
     index = 0
-    while (index := make_selection(self)) != -1:
+    groups = retrieve_groups()
+    while (index := make_selection(self, groups)) != -1:
+        # confirm() -> Are you sure?
         groups.pop(index)
         restore_groups(groups)
-    self.main_screen.refresh()
+    self.set_last_context()
 
-def make_selection(self: Driver):
-    groups = retrieve_groups()
+def view_group(self: Driver, group: Group):
+    start_y, start_x, height, width = self.main_screen.getbegyx() + self.main_screen.getmaxyx()
+    container = curses.newwin(height, width, start_y, start_x)
+    FRAME_WIDTH = 2 * width // 3
+    FRAME_HEIGHT = height - 4
+    offset_x = (width - FRAME_WIDTH) // 2
+    draw_box(container, FRAME_HEIGHT + 2, FRAME_WIDTH + 2, 1, offset_x - 1)
+    view_window = curses.newwin(FRAME_HEIGHT, FRAME_WIDTH, start_y + 2, start_x + offset_x)
+    container.refresh()
+    view = Page(view_window, height=FRAME_HEIGHT * 2, width=FRAME_WIDTH * len(group.terms))
+    index = 0
+    for term, defn in group.terms.items():
+        view.addstr(1, 1 + index * FRAME_WIDTH, f"term: {term}")
+        view.addstr(1 + FRAME_HEIGHT, 1 + index * FRAME_WIDTH, f"def: {defn}")
+        index += 1
+
+    binds = {'w': c.Dir.DOWN, 'a': c.Dir.RIGHT, 's': c.Dir.UP, 'd': c.Dir.LEFT}
+    timeout = 0.001
+    view.refresh()
+    while True:
+        key = view.getkey()
+        if key in ['a', 'd']:
+            for _ in range(FRAME_WIDTH):
+                view.shift(binds[key], 1)
+                view.refresh()
+                sleep(timeout * FRAME_HEIGHT / 2)
+                
+        if key in ['w', 's']:
+            for _ in range(FRAME_HEIGHT):
+                view.shift(binds[key], 1)
+                view.refresh()
+                sleep(timeout * FRAME_WIDTH / 2)
+        if key == c.ESC:
+            break
+
+def make_selection(self: Driver, groups: list[Group]):
     num_groups = len(groups)
-    start_y, start_x = self.main_screen.getbegyx()
-    height, width = self.main_screen.getmaxyx()
-    selection_width = 30
-    selection_window: window = curses.newwin(\
-        height, selection_width, start_y, start_x + (width - selection_width) // 2)
+    height, width, start_y, start_x = self.main_screen.getmaxyx() + self.main_screen.getbegyx()
+    container = curses.newwin(height, width, start_y, start_x)
+    header = "GROUP SELECT:"
+    container.addstr(1, (width - len(header)) // 2, header)
 
-    selection_height = height
-    if num_groups > height:
-        selection_height = num_groups
+    SEL_WIN_W = 36 + (width % 2)
+    SEL_WIN_H = height - 5
+    center_offset_x = (width - SEL_WIN_W) // 2
+    self.main_screen.remove_overlay()
+    selection_window = curses.newwin(SEL_WIN_H, SEL_WIN_W, start_y + 3, start_x + center_offset_x)
+    draw_box(container, SEL_WIN_H + 2, SEL_WIN_W + 2, 2, center_offset_x - 1,)
+    container.refresh()
 
-    page = FreeWindow(selection_window, height=selection_height)
-    for index in range(num_groups):
+    page_height = SEL_WIN_H
+    if num_groups > SEL_WIN_H:
+        page_height = num_groups
+    selection = Page(selection_window, height=page_height)
+
+    for index in range(num_groups): # adding content
         group = groups[index]
         desc = f"{index + 1}.) {group.title} - {len(group.terms)} Terms"
-        page.addstr(index, 0, desc)
-    index = browse_selection(page, selection_height, selection_width, height, width)
-    return index
+        selection.addstr(index, 0, desc)
 
-def browse_selection(selection: FreeWindow, sel_height: int, sel_width: int, w_height: int, w_width):
+    return browse_selection(selection, SEL_WIN_H, num_groups)
+
+def browse_selection(page: Page, sel_win_h: int, num_groups: int):
+    page_height, page_width = page.getmaxyx()
     shift = 1
-    y, v_shift = 0, 0
+    selected_y, v_shift = 0, 0
     while True:
-        selection.chgat(y, 0, sel_width, curses.A_STANDOUT)
-        selection.refresh()
-        selection.chgat(y, 0, sel_width, curses.A_NORMAL)
-        key = selection.getkey()
+        page.chgat(selected_y, 0, page_width, curses.A_STANDOUT)
+        page.refresh()
+        page.chgat(selected_y, 0, page_width, curses.A_NORMAL)
+        key = page.getkey()
         match(key):
             case 'w':
-                if y - shift >= 0:
-                    y -= shift
-                    if y < v_shift:
-                        selection.shift(Dir.DOWN, shift)
+                if selected_y >= shift:
+                    selected_y -= shift
+                    if selected_y < v_shift:
+                        page.shift(Dir.DOWN, shift)
                         v_shift -= shift
             case 's':
-                if y + shift < sel_height:
-                    y += shift
-                    if y >= v_shift + w_height:
-                        selection.shift(Dir.UP, shift)
+                if selected_y < min(page_height - shift, num_groups - 1):
+                    selected_y += shift
+                    if selected_y >= v_shift + sel_win_h:
+                        page.shift(Dir.UP, shift)
                         v_shift += shift
             case c.ENTER:
-                return y
+                break
             case c.ESC:
-                return -1
-        selection.refresh()
+                selected_y = -1
+                break
+    return selected_y
 
 def confirm():
     pass
 
+MM_BUTTONS = "(TESTING)\0CREATE NEW GROUP\0STUDY GROUP\0EDIT GROUP\0DELETE GROUP".split('\0')
+CM_BUTTONS = "REVIEW TEST BACK".split(' ')
+
 if __name__ == "__main__":
     screen = Driver()
-    screen.set_title("Testlet")
-    screen.set_buttons(buttons=["Create new Group", "Study Group", "Edit Group", "Delete Group"])
-    screen.set_onpress([lambda: ...,
+    screen.set_title("TESTLET")
+    screen.set_buttons(MM_BUTTONS)
+    screen.set_onpress([lambda: study(screen),
+                        lambda: ...,
                         lambda: screen.set_context("choose-mode"),
-                        lambda: make_selection(screen),
+                        lambda: ...,
                         lambda: delete(screen)])
     
     screen.build()
     
-    screen.new_context("choose-mode", 
-                     [ "Review", "Test", "Back"],
-                     [lambda: make_selection(screen),
-                      lambda: make_selection(screen),
-                      lambda: screen.set_context("main-menu")])
+    screen.new_context("choose-mode", CM_BUTTONS,
+                     [lambda: ...,
+                      lambda: ...,
+                      lambda: screen.set_last_context()])
 
     screen.event_loop()
