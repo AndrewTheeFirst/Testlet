@@ -4,6 +4,10 @@ from cursestools.utils import Pad
 import curses
 from typing import Callable
 from atexit import register
+from collections import deque
+
+# from rich.traceback import install
+# install()
 
 BUTTON_HEIGHT = 3
 BUTTON_WIDTH = 22
@@ -30,6 +34,7 @@ class Driver:
         self.menu_onpress = []
     
         self.context = ""
+        self.last_context: deque[str] = deque()
 
         self.onpress = {}
         self.buttons = {}
@@ -38,6 +43,7 @@ class Driver:
     
     def init_colors(self):
         curses.init_pair(1, curses.COLOR_RED, curses.COLOR_BLACK)
+        curses.init_pair(2, curses.COLOR_WHITE, curses.COLOR_BLUE)
 
     def set_title(self, title: str):
         self.title = title
@@ -58,19 +64,19 @@ class Driver:
     def make_options(self):
         '''shows controls and any extra information'''
         footer = Panel(1, curses.COLS, curses.LINES - 1, 0)
-        text = "| Press Q to Quit | Press R to Return to Main Menu | Press C to Chat |"
+        text = "| Press Q to Quit | Press R to Return to Main Menu | Press B to Back |"
         offset_x = (curses.COLS - len(text)) // 2
         footer.addstr(0, offset_x, text)
-        for label in ["Quit", "Return", "Chat"]:
+        for label in ["Quit", "Return", "Back"]:
             footer.chgat(0, offset_x + text.find(label) - 5, 1, curses.color_pair(1))
         return footer
 
     def build(self):
         '''places windows and refreshes the terminal'''
         self.header = self.make_header()
-        self.main_screen = Panel(curses.LINES - 6, curses.COLS, 1, 0, outline=True)
-        self.prompt_box = Panel(1, curses.COLS - 2, curses.LINES - 5, 1)
-        self.text_box = TextBox(3, curses.COLS // 2, curses.LINES - 4, curses.COLS // 4)
+        self.main_screen = Canvas(curses.LINES - 2, curses.COLS, 1, 0, outline=True)
+        # self.prompt_box = Panel(1, curses.COLS - 2, curses.LINES - 5, 1)
+        # self.text_box = TextBox(3, curses.COLS // 2, curses.LINES - 4, curses.COLS // 4)
         self.options = self.make_options()
 
         self.new_context("main-menu", self.menu_buttons, self.menu_onpress)
@@ -80,11 +86,8 @@ class Driver:
         curses.doupdate()
 
     def refresh_all(self):
-        self.header.noutrefresh()
-        self.main_screen.noutrefresh()
-        self.prompt_box.noutrefresh()
-        self.text_box.noutrefresh()
-        self.options.noutrefresh()
+        for window in [self.header, self.main_screen, self.options]:
+            window.noutrefresh()
 
     def new_context(self, name: str, buttons: list[str], functions: list[Callable[[], None]], overlay: Pad = None):
         if overlay is None:
@@ -94,14 +97,24 @@ class Driver:
         self.overlay[name] = overlay
         self.buttons[name] = buttons
 
+    def set_last_context(self):
+        num_prev_contexts = len(self.last_context)
+        if num_prev_contexts == 0:
+            self.set_context(self.context)
+        else:
+            self.set_context(self.last_context.pop())
+            self.last_context.pop()
+
     def set_context(self, context: str):
+        if context != self.context and self.context != "":
+            self.last_context.append(self.context)
         self.context = context
         overlay = self.overlay[context]
         self.reset_pointer()
         self.main_screen.set_overlay(overlay)
         self.main_screen.show()
 
-    def setup_buttons(self, overlay: FreeWindow, buttons: list[str]):
+    def setup_buttons(self, overlay: Page, buttons: list[str]):
         pointer_start = (0, 0)
         if buttons:
             num_buttons = len(buttons)
@@ -149,14 +162,12 @@ class Driver:
                 self.options.toggle()
                 if self.options.visible:
                     self.main_screen.hide()
-                    self.prompt_box.hide()
+                    # self.prompt_box.hide()
                 else:
                     self.main_screen.show()
-                    self.prompt_box.show()
+                    # self.prompt_box.show()
             elif self.options.visible:
                 self.options_handler(key)
-            elif self.context == None:
-                self.text_box(key)
             else:
                 self.menu_handler(key)
             # else:
@@ -182,11 +193,11 @@ class Driver:
                 self.close()
             case 'R':
                 self.options.hide()
-                self.main_screen.show()
-                self.prompt_box.show()
-            case 'C':
+                self.set_context("main-menu")
+                self.last_context.clear()
+            case 'B':
                 self.options.hide()
-                self.prompt_box.show()
+                self.set_last_context()
 
     def close(self):
         self.running = False
