@@ -1,13 +1,13 @@
 from cursestools import *
 import cursestools as c
-from cursestools.utils import Pad
+from cursestools.utils import PadType
 import curses
 from typing import Callable
 from atexit import register
 from collections import deque
 
-# from rich.traceback import install
-# install()
+from rich.traceback import install
+install()
 
 BUTTON_HEIGHT = 3
 BUTTON_WIDTH = 22
@@ -36,10 +36,10 @@ class Driver:
         self.context = ""
         self.last_context: deque[str] = deque()
 
-        self.onpress = {}
-        self.buttons = {}
-        self.overlay = {}
-        self.pointer_start = {}
+        self.onpress: dict[str, Callable] = {}
+        self.buttons: dict[str, list[str]] = {}
+        self.overlay: dict[str, ] = {}
+        self.pointer_start: dict[str, ] = {}
     
     def init_colors(self):
         curses.init_pair(1, curses.COLOR_RED, curses.COLOR_BLACK)
@@ -89,7 +89,7 @@ class Driver:
         for window in [self.header, self.main_screen, self.options]:
             window.noutrefresh()
 
-    def new_context(self, name: str, buttons: list[str], functions: list[Callable[[], None]], overlay: Pad = None):
+    def new_context(self, name: str, buttons: list[str], functions: list[Callable[[], None]], overlay: PadType = None):
         if overlay is None:
             overlay = curses.newpad(*self.main_screen.getmaxyx())
         self.pointer_start[name] = self.setup_buttons(overlay, buttons)
@@ -121,11 +121,11 @@ class Driver:
             max_y, max_x = self.main_screen.getmaxyx()
             offset_x = (max_x - BUTTON_WIDTH) // 2
             offset_y = (max_y - BUTTON_HEIGHT * num_buttons + num_buttons - 1) // 2 - 1
-            draw_button(offset_y, offset_x, BUTTON_HEIGHT, BUTTON_WIDTH, overlay, buttons[0])
+            draw_button(overlay, BUTTON_HEIGHT, BUTTON_WIDTH, offset_y, offset_x, buttons[0])
             pointer_start = (offset_y + 1, offset_x - 2)
             for index in range(1, num_buttons):
                 offset_y = (max_y - BUTTON_HEIGHT * num_buttons + num_buttons - 1) // 2 - 1 + (index * BUTTON_HEIGHT)
-                draw_button(offset_y, offset_x, BUTTON_HEIGHT, BUTTON_WIDTH, overlay, buttons[index])
+                draw_button(overlay, BUTTON_HEIGHT, BUTTON_WIDTH, offset_y, offset_x, buttons[index])
         return pointer_start
 
     def reset_pointer(self):
@@ -158,6 +158,7 @@ class Driver:
         self.running = True
         while self.running:
             key = self.stdscr.getkey()
+            curses.flushinp()
             if key == ESC:
                 self.options.toggle()
                 if self.options.visible:
