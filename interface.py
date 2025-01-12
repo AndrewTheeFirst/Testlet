@@ -1,14 +1,18 @@
 from pickle import dump, load
-from dataclasses import dataclass
 
 PATH = "groups.txt"
 
-@dataclass
+
 class Group:
-    title: str
-    terms: dict[str, str]
+    def __init__(self, title: str):
+        self.title = title
+        self.terms: list[list[str]] = []
+
     def new_term(self, term: str, definition: str):
-        self.terms[term] = definition
+        self.terms.append([term, definition])
+
+def sort_groups():
+    pass
 
 def restore_groups(groups: list[Group]):
     with open(PATH, 'wb') as file:
@@ -30,12 +34,13 @@ def retrieve_groups() -> list[Group]:
                 break
     return groups
 
-# groups = []
-# for group_num in range(30):
-#     dict = {}
-#     title = f"Group {group_num}"
-#     group = Group(title, dict)
-#     for term_num in range(5):
-#         group.new_term(f"Term {term_num}", f"Definition {term_num}")
-#     groups.append(group)
-# restore_groups(groups)
+if __name__ == "__main__":
+    from random import randrange
+
+    groups = []
+    for group_num in    range(50):
+        group = Group(f"Group {group_num} Title")
+        for term_num in range(randrange(3, 11)):
+            group.new_term(f"Group {group_num} - Term {term_num}", f"Group {group_num} - Definition {term_num}")
+        groups.append(group)
+    restore_groups(groups)
