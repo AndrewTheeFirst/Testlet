@@ -28,51 +28,16 @@ def prompt_window(window: window | Page, prompt: str, timeout = 1):
     sleep(timeout)
     window.refresh()
 
-
 def create():
     ...
 
-def edit(self: Driver, container: window):
-    groups = retrieve_groups()
-    index = group_select(self, groups)
-    while index != -1:
-        view = GroupEditView(container, groups[index])
-        view.render()
-        view.event_loop()
-        index = group_select(self, groups)
-    self.set_context(self.context)
-
-def study(self: Driver, container: window):
-    groups = retrieve_groups()  
-    index = group_select(self, groups)
-    while index != -1:
-        view = GroupStudyView(container, groups[index])
-        view.render()
-        view.event_loop()
-        index = group_select(self, groups)
-    self.set_context(self.context)
-
-def delete(self: Driver):
-    groups = retrieve_groups()
-    index = group_select(self, groups, confirm=True)
-    while index != -1:
-        groups.pop(index)
-        restore_groups(groups)
-        index = group_select(self, groups, confirm=True)
-    self.set_last_context()
-
 def delete(self: Driver, container: window):
     groups = retrieve_groups()
-    view = GroupView(container, groups)
-    view.render()
-    view.event_loop()
-    index = view.selected_y
+    index = group_select(container, groups, confirm=True)
     while index != -1:
         groups.pop(index)
         restore_groups(groups)
-        view.render()
-        view.event_loop()
-        index = view.selected_y
+        index = group_select(container, groups, confirm=True)
     self.set_last_context()
 
 class GroupEditView:
@@ -155,6 +120,16 @@ class GroupEditView:
         if requires_render:
             self.render()
 
+def edit(self: Driver, container: window):
+    groups = retrieve_groups()
+    index = group_select(container, groups)
+    while index != -1:
+        view = GroupEditView(container, groups[index])
+        view.render()
+        view.event_loop()
+        index = group_select(container, groups)
+    self.set_context(self.context)
+
 class GroupStudyView:
 
     def __init__(self, container: window, group: Group):
@@ -213,29 +188,42 @@ class GroupStudyView:
             if key == c.ESC:
                 break
 
+def study(self: Driver, container: window):
+    groups = retrieve_groups()  
+    index = group_select(container, groups)
+    while index != -1:
+        view = GroupStudyView(container, groups[index])
+        view.render()
+        view.event_loop()
+        index = group_select(container, groups)
+    self.set_context(self.context)
+
 class GroupView:
+    
     def __init__(self, container: window, groups: list[Group]):
-        header = "GROUP SELECT:"
         self.groups = groups
+        self.container = container
         num_groups = len(groups)
-        height, width, start_y, start_x = container.getmaxyx() + container.getbegyx()
-        cover(container)
-        container.clear()
-        container.addstr(1,  (width - len(header)) // 2, header)
-        win_h = height - 5
-        win_w = 36 + (width % 2)
+        height, width, start_y, start_x = self.container.getmaxyx() + self.container.getbegyx()
+        win_h = height - 6 # height - 2 to be contained, - 2 for the head, - 2 for the foot
+        win_w = width // 3 # will be a third of the width of the screen
         page_h = win_h
         if num_groups > win_h:
             page_h = num_groups
         self.view_window = Canvas(win_h + 2, win_w + 2,\
-                                  start_y + (height - (win_h + 2)) // 2, start_x + (width - (win_w + 2)) // 2, outline=True)
+                                  start_y + 2, start_x + (width - (win_w + 2)) // 2, outline=True)
         self.view = Page(self.view_window, height=page_h)
         self.view_window.refresh()
         self.selected_y = 0
         self.v_shift = 0
 
     def render(self):
-        self.view_window.refresh()
+        header = "GROUP SELECT:"
+        cover(self.container)
+        self.container.clear()
+        self.container.addstr(1,  (self.container.getmaxyx()[1] - len(header)) // 2, header)
+        self.container.noutrefresh()
+        self.view_window.noutrefresh()
         for index in range(len(self.groups)):
             group = self.groups[index]
             desc = f"{group.title} - {len(group.terms)} Terms"
@@ -268,50 +256,20 @@ class GroupView:
                     self.selected_y = -1
                 break
 
-def group_select(self: Driver, groups: list[Group], confirm: bool = False):
-    num_groups = len(groups)
-    self.main_screen.remove_overlay()
-    height, width = self.main_screen.getmaxyx()
-    beg_y, beg_x = self.main_screen.getbegyx()
-
-    sel_win_h = height - 5
-    sel_win_w = 36 + (width % 2)
-    frame_offset_y = 2
-    frame_offset_x = (width - sel_win_w) // 2 - 1 # relative to the self.main_screen
-    sel_offset_y = beg_y + frame_offset_y + 1 # relative to self.stdscr
-    sel_offset_x = beg_x + frame_offset_x + 1
-
-    container = curses.newwin(height, width, beg_y, beg_x)
-    selection: Page = _render_selection(sel_win_h, sel_win_w,
-                                       sel_offset_y, sel_offset_x,
-                                       groups)
-    
-    header = "GROUP SELECT:"
-    container.addstr(1, (width - len(header)) // 2, header)
-    draw_box(container, sel_win_h + 2, sel_win_w + 2, frame_offset_y, frame_offset_x)
-    container.noutrefresh()
-    index, v_shift = _browse_selection(selection, num_groups)
-    
-    # if confirm:
-    #     while index != -1 and not get_confirm(self):
-    #         draw_box(container, sel_win_h + 2, sel_win_w + 2, frame_offset_y, frame_offset_x)
-    #         container.noutrefresh()
-    #         index, v_shift = _browse_selection(selection, num_groups, index, v_shift)
-    # return index
-
-def group_select(container: window, groups: list[Group], confirm: bool = ...):
+def group_select(container: window, groups: list[Group], confirm: bool = False):
     view = GroupView(container, groups)
-    view.render()
-    view.event_loop()
+    while True:
+        view.render()
+        view.event_loop()
+        if confirm and view.selected_y != -1:
+            if not get_confirm(container):
+                continue
+        break
     return view.selected_y
 
-def get_confirm(self: Driver):
-    height, width, beg_y, beg_x = self.main_screen.getmaxyx() + self.main_screen.getbegyx()
-    container_h = 5
-    container_w = width - 2
-    container = curses.newwin(container_h, container_w,
-                              beg_y + (height - container_h) // 2, beg_x + 2)
-    draw_button(container, container_h - 2, container_w - 2, 1, 1,
+def get_confirm(container: window):
+    win_h, win_w = container.getmaxyx()
+    draw_button(container, 3, win_w - 2, (win_h - 3) // 2 , 1,
                 "Are you sure? y/n")
     while True:
         key = container.getkey()
