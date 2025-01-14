@@ -2,12 +2,13 @@ from cursestools import *
 import cursestools as c
 from cursestools.utils import PadType
 import curses
+from curses import window
 from typing import Callable
 from atexit import register
 from collections import deque
 
-from rich.traceback import install
-install()
+# from rich.traceback import install
+# install(show_locals=True)
 
 BUTTON_HEIGHT = 3
 BUTTON_WIDTH = 22
@@ -23,23 +24,22 @@ class Driver:
         curses.noecho() # typed keys will not be displayed on the window
         curses.cbreak() # program will not wait for the enter key to be pressed to react to input
         curses.curs_set(0) # make cursor invisible
-        if curses.has_colors:
-            curses.start_color()
-            self.init_colors()
 
         self.running = False
 
+        self.header: window = ...
+        self.main_screen: Canvas = ...
+        self.options: Panel = ...
+
         self.title = ""
-        self.menu_buttons = []
-        self.menu_onpress = []
-    
+
         self.context = ""
         self.last_context: deque[str] = deque()
 
         self.onpress: dict[str, Callable] = {}
         self.buttons: dict[str, list[str]] = {}
-        self.overlay: dict[str, ] = {}
-        self.pointer_start: dict[str, ] = {}
+        self.overlay: dict[str, PadType] = {}
+        self.pointer_start: dict[str, tuple[int, int]] = {}
     
     def init_colors(self):
         curses.init_pair(1, curses.COLOR_RED, curses.COLOR_BLACK)
@@ -47,12 +47,6 @@ class Driver:
 
     def set_title(self, title: str):
         self.title = title
-    
-    def set_buttons(self, buttons: list[str]):
-        self.menu_buttons = buttons
-
-    def set_onpress(self, lmbdas: list[Callable[[], None]]):
-        self.menu_onpress = lmbdas
 
     def make_header(self):
         '''shows game title and any extra information'''
@@ -73,21 +67,16 @@ class Driver:
 
     def build(self):
         '''places windows and refreshes the terminal'''
+        if curses.has_colors:
+            curses.start_color()
+            self.init_colors()
         self.header = self.make_header()
         self.main_screen = Canvas(curses.LINES - 2, curses.COLS, 1, 0, outline=True)
-        # self.prompt_box = Panel(1, curses.COLS - 2, curses.LINES - 5, 1)
-        # self.text_box = TextBox(3, curses.COLS // 2, curses.LINES - 4, curses.COLS // 4)
         self.options = self.make_options()
-
-        self.new_context("main-menu", self.menu_buttons, self.menu_onpress)
-        self.refresh_all()
-        self.set_context("main-menu")
+        for window in (self.header, self.main_screen, self.options):
+            window.noutrefresh()
         self.options.hide()
         curses.doupdate()
-
-    def refresh_all(self):
-        for window in [self.header, self.main_screen, self.options]:
-            window.noutrefresh()
 
     def new_context(self, name: str, buttons: list[str], functions: list[Callable[[], None]], overlay: PadType = None):
         if overlay is None:
@@ -216,17 +205,18 @@ register(shutdown)
     
 if __name__ == "__main__":
     screen = Driver()
-    screen.set_title("Title")
-    screen.set_buttons(buttons=["SCRN1 BTN1",
-                                "SCRN1 BTN2",
-                                "SCRN1 BTN3"])
-    ## ADDS TO MAIN MENU
-    screen.set_onpress([lambda: screen.set_context("main-menu"),
-                        lambda: screen.set_context("0"),
-                        lambda: screen.set_context("1")])
+    screen.set_title("Insert Title")
 
     ### MUST BUILD BEFORE ADDING CONTEXTS
     screen.build()
+
+    ## ADDS TO MAIN MENU
+    screen.new_context("main-menu", ["SCRN1 BTN1",
+                                     "SCRN1 BTN2",
+                                     "SCRN1 BTN3"],
+                    [lambda: screen.set_context("main-menu"),
+                     lambda: screen.set_context("0"),
+                     lambda: screen.set_context("1")])
     
     screen.new_context("0", 
                        ["SCRN2 BTN1",
@@ -244,5 +234,5 @@ if __name__ == "__main__":
                        [lambda: screen.set_context("main-menu"),
                         lambda: screen.set_context("0")])
     
-
+    screen.set_context("main-menu")
     screen.event_loop()
