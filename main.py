@@ -12,9 +12,6 @@ from pygame.time import Clock
 clock = Clock()
 binds = {'a': Dir.RIGHT, 'w': Dir.DOWN, 's': Dir.UP, 'd': Dir.LEFT}
 
-def copy_window(screen: window):
-    return curses.newwin(*screen.getmaxyx(), *screen.getbegyx())
-
 def prompt_window(window: window | Page, prompt: str, timeout = 1):
     prompt_len = len(prompt)
     height = window.getmaxyx()[0]
@@ -31,40 +28,34 @@ def prompt_window(window: window | Page, prompt: str, timeout = 1):
 def create():
     ...
 
-def delete(self: Driver, container: window):
+def delete(self: Driver):
     groups = retrieve_groups()
-    index = group_select(container, groups, confirm=True)
+    index = group_select(self.main_screen, groups, confirm=True)
     while index != -1:
         groups.pop(index)
         restore_groups(groups)
-        index = group_select(container, groups, confirm=True)
+        index = group_select(self.main_screen, groups, confirm=True)
     self.set_last_context()
 
 class GroupEditView:
 
-    def __init__(self, container: window, group: Group):
+    def __init__(self, main_screen: Canvas, group: Group):
         self.group = group
-        start_y, start_x, height, width = container.getbegyx() + container.getmaxyx()
-        cover(container)
-        container.clear()
-        container.addstr(1,  (width - len(group.title)) // 2, group.title)
-
+        start_y, start_x, height, width = main_screen.getbegyx() + main_screen.getmaxyx()
         view_win_w = 2 * width // 3 # 2/3's of the container width
         view_win_h = height - 8 # height of container - 2 to be contained, - 4 for tb, - 2 for header
         tb_h = view_win_h // 2 # 1/2 the height of view_window
         tb_w = 2 * view_win_w // 3 # 2/3's the width of view_window
-
         win_offset_x = start_x + (width - (view_win_w + 2)) // 2 # Adding 2 adjusts for canvas/tb border
 
+        self.main_screen = main_screen
+
+        self.background = curses.newpad(height, width)
         self.view_window = Canvas(view_win_h + 2, view_win_w + 2, start_y + 2, win_offset_x, outline=True)
         self.line_edit = Terminal(4, view_win_w + 2, height - 2, win_offset_x)
         self.view = Page(self.view_window, multiplier=2, width=view_win_w * len(group.terms))
         self.textbox = TextBox(tb_h, tb_w, v_centered=True, alignment=Align.CENTER)
-        
-        container.noutrefresh()
-        self.view_window.noutrefresh()
-        self.line_edit.noutrefresh()
-        curses.doupdate()
+        self.background.addstr(1,  (width - len(group.title)) // 2, group.title)
     
     def render(self):
         self.view.clear()
@@ -73,6 +64,8 @@ class GroupEditView:
         tb_h, tb_w = self.textbox.get_size()
         tb_offset_y = (win_h - tb_h) // 2
         tb_offset_x = (win_w - tb_w) // 2
+
+        self.main_screen.set_overlay(self.background)
         for index in range(len(terms)):
             index_hz_offset = index * win_w
             for index_2, label in enumerate(["TERM:", "DEF:"]):
@@ -80,7 +73,11 @@ class GroupEditView:
                 self.view.addstr(index_vt_offset, 1 + index_hz_offset, label)
                 self.textbox.set_text(terms[index][index_2])
                 self.textbox.print_textbox(self.view, tb_offset_y + index_vt_offset, tb_offset_x + index_hz_offset)
-        self.view.refresh()
+        self.main_screen.noutrefresh()
+        self.view_window.noutrefresh()
+        self.view.noutrefresh()
+        self.line_edit.noutrefresh()
+        curses.doupdate()
 
     def event_loop(self):
         win_h, win_w = self.view_window.getmaxyx()
@@ -120,37 +117,35 @@ class GroupEditView:
         if requires_render:
             self.render()
 
-def edit(self: Driver, container: window):
+def edit(self: Driver):
     groups = retrieve_groups()
-    index = group_select(container, groups)
+    index = group_select(self.main_screen, groups)
     while index != -1:
-        view = GroupEditView(container, groups[index])
+        view = GroupEditView(self.main_screen, groups[index])
         view.render()
         view.event_loop()
-        index = group_select(container, groups)
+        index = group_select(self.main_screen, groups)
     self.set_context(self.context)
 
 class GroupStudyView:
 
-    def __init__(self, container: window, group: Group):
+    def __init__(self, main_screen: Canvas, group: Group):
         self.group = group
-        start_y, start_x, height, width = container.getbegyx() + container.getmaxyx()
-        cover(container)
-        container.clear()
-        container.addstr(1,  (width - len(group.title)) // 2, group.title)
-        
+        start_y, start_x, height, width = main_screen.getbegyx() + main_screen.getmaxyx()
         view_win_w = 2 * width // 3
         view_win_h = height - 4
         frame_offset_x = (width - view_win_w) // 2
         tb_h = view_win_h // 2 # 1/2 the height of view_window
         tb_w = 2 * view_win_w // 3 # 2/3's the width of view_window
 
-        self.view_window = Canvas(view_win_h + 2, view_win_w + 2, start_y + 2, start_x + frame_offset_x, outline=True)
+        self.main_screen = main_screen
+
+        self.background = curses.newpad(height, width)
+        self.view_window = Panel(view_win_h + 2, view_win_w + 2, start_y + 2, start_x + frame_offset_x, outline=True)
         self.view = Page(self.view_window, height=view_win_h * 2, width=view_win_w * len(group.terms))
         self.textbox = TextBox(tb_h, tb_w, alignment=Align.CENTER, v_centered=True)
 
-        container.noutrefresh()
-        self.view_window.noutrefresh()
+        self.background.addstr(1,  (width - len(self.group.title)) // 2, self.group.title)
         
     def render(self):
         win_h, win_w = self.view_window.getmaxyx()
@@ -161,6 +156,7 @@ class GroupStudyView:
         box_offset_y = (win_h - box_h) // 2
         box_offset_x = (win_w - box_w) // 2
 
+        self.main_screen.set_overlay(self.background)
         for index, (term, defn) in enumerate(self.group.terms):
             index_hz_offset = index * win_w
             for index_2, text in enumerate([term, defn]):
@@ -168,6 +164,10 @@ class GroupStudyView:
                 draw_box(self.view, box_h, box_w, box_offset_y + index_vt_offset, box_offset_x + index_hz_offset)
                 self.textbox.set_text(text)
                 self.textbox.print_textbox(self.view, tb_offset_y + index_vt_offset, tb_offset_x + index_hz_offset)
+        self.main_screen.noutrefresh()
+        self.view_window.noutrefresh()
+        self.view.noutrefresh()
+        curses.doupdate()
 
     def event_loop(self):
         win_h, win_w = self.view_window.getmaxyx()
@@ -188,46 +188,50 @@ class GroupStudyView:
             if key == c.ESC:
                 break
 
-def study(self: Driver, container: window):
+def study(self: Driver) -> None:
     groups = retrieve_groups()  
-    index = group_select(container, groups)
+    index = group_select(self.main_screen, groups)
     while index != -1:
-        view = GroupStudyView(container, groups[index])
+        view = GroupStudyView(self.main_screen, groups[index])
         view.render()
         view.event_loop()
-        index = group_select(container, groups)
+        index = group_select(self.main_screen, groups)
     self.set_context(self.context)
 
 class GroupView:
     
-    def __init__(self, container: window, groups: list[Group]):
+    def __init__(self, main_screen: Canvas, groups: list[Group]):
         self.groups = groups
-        self.container = container
+        header = "GROUP SELECT:"
         num_groups = len(groups)
-        height, width, start_y, start_x = self.container.getmaxyx() + self.container.getbegyx()
+        height, width, start_y, start_x = main_screen.getmaxyx() + main_screen.getbegyx()
         win_h = height - 6 # height - 2 to be contained, - 2 for the head, - 2 for the foot
         win_w = width // 3 # will be a third of the width of the screen
         page_h = win_h
         if num_groups > win_h:
             page_h = num_groups
-        self.view_window = Canvas(win_h + 2, win_w + 2,\
+
+        self.main_screen = main_screen
+
+        self.background = curses.newpad(height, width)
+        self.view_window = Panel(win_h + 2, win_w + 2,\
                                   start_y + 2, start_x + (width - (win_w + 2)) // 2, outline=True)
         self.view = Page(self.view_window, height=page_h)
-        self.view_window.refresh()
+        self.background.addstr(1,  (width - len(header)) // 2, header)
+
         self.selected_y = 0
         self.v_shift = 0
 
-    def render(self):
-        header = "GROUP SELECT:"
-        cover(self.container)
-        self.container.clear()
-        self.container.addstr(1,  (self.container.getmaxyx()[1] - len(header)) // 2, header)
-        self.container.noutrefresh()
+    def render(self) -> None:
+        self.main_screen.set_overlay(self.background)
+        self.main_screen.noutrefresh()
         self.view_window.noutrefresh()
         for index in range(len(self.groups)):
             group = self.groups[index]
             desc = f"{group.title} - {len(group.terms)} Terms"
             self.view.addstr(index, 0, desc)
+        self.view.noutrefresh()
+        curses.doupdate()
 
     def event_loop(self) -> int:
         win_h = self.view_window.getmaxyx()[0]
@@ -256,28 +260,31 @@ class GroupView:
                     self.selected_y = -1
                 break
 
-def group_select(container: window, groups: list[Group], confirm: bool = False):
-    view = GroupView(container, groups)
+def group_select(main_screen: Canvas, groups: list[Group], confirm: bool = False) -> int:
+    view = GroupView(main_screen, groups)
     while True:
         view.render()
         view.event_loop()
         if confirm and view.selected_y != -1:
-            if not get_confirm(container):
+            if not get_confirm(main_screen):
                 continue
         break
     return view.selected_y
 
-def get_confirm(container: window):
-    win_h, win_w = container.getmaxyx()
-    draw_button(container, 3, win_w - 2, (win_h - 3) // 2 , 1,
-                "Are you sure? y/n")
+def get_confirm(main_screen: Canvas, prompt: str = "Are you sure?") -> bool:
+    win_h, win_w, start_y, start_x = main_screen.getmaxyx() + main_screen.getbegyx()
+    but_win_h, but_win_w = 3, win_w // 2
+    text = f"{prompt} - y/n"
+    button_window = curses.newwin(but_win_h, but_win_w, start_y + (win_h - but_win_h) // 2, start_x + (win_w - but_win_w) // 2)
+    button_window.box()
+    button_window.addstr(1, (but_win_w - len(text)) // 2, text)
     while True:
-        key = container.getkey()
+        key = button_window.getkey()
         if key in ['y', c.ENTER]:
-            cover(container)
+            cover(button_window)
             return True
         if key in ['n', c.ESC]:
-            cover(container)
+            cover(button_window)
             return False
     
 MM_BUTTONS = "CREATE NEW GROUP,STUDY GROUP,EDIT GROUP,DELETE GROUP".split(',')
@@ -286,19 +293,21 @@ CM_BUTTONS = "REVIEW TEST BACK".split()
 if __name__ == "__main__":
     input("SET SCREEN TO DESIRED SIZE THEN PRESS ENTER")
     screen = Driver()
-    screen.set_title("TESTLET")
-    screen.set_buttons(MM_BUTTONS)
-    container = ...
-    screen.set_onpress([lambda: create(),
-                        lambda: screen.set_context("choose-mode"),
-                        lambda: edit(screen, container),
-                        lambda: delete(screen, container)])
 
+    screen.set_title("TESTLET")
     screen.build()
-    container = copy_window(screen.main_screen)
+
+    screen.new_context("main-menu", MM_BUTTONS,
+                       [lambda: create(),
+                        lambda: screen.set_context("choose-mode"),
+                        lambda: edit(screen),
+                        lambda: delete(screen)])
+    
     screen.new_context("choose-mode", CM_BUTTONS,
-                     [lambda: study(screen, container),
+                     [lambda: study(screen),
                       lambda: ...,
                       screen.set_last_context])
+                      
+    screen.set_context("main-menu")
 
     screen.event_loop()
